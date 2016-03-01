@@ -2,12 +2,11 @@ Getting started
 ---------------
 
 Inherit from `sockjs_chat.main.BaseSockJSHandler`, implement to methods:
-
-```
+```python
     class SockJSHandler(BaseSockJSHandler):
         def save_message(self, message, users):
             pass
-
+    
         def get_friends_list(self):
             return []
 ```
@@ -17,8 +16,7 @@ Add `'sockjs_chat'` to INSTALLED_APPS
 Django command for running tornado [django-sockjs-tornado](https://github.com/peterbe/django-sockjs-tornado)
 
 Add to settings
-
-```
+```python
     SOCKJS_PORT = 8080
     SOCKJS_CHANNEL = 'websocket'
     SOCKJS_CLASSES = (
@@ -29,8 +27,7 @@ Add to settings
 For running tornado `./manage.py socketserver`
 
 A simple app might look like this:
-
-```
+```javascript
     $(function () {
         var i;
         var Socket = {
