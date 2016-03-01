@@ -59,51 +59,54 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
 
     def on_message(self, message):
         msg = json.loads(message)
-
-        if msg.get('type') == 'subscribe':
-            self.user_id = unicode(msg['user'])
-            self.subscriber.subscribe('public-{}'.format(self.user_id), self)
-            if not self.channels.has_public_channel(self.user_id):
-                # add user's friends to channel list
-                self.channels.lpush('public-{}'.format(self.user_id), self.get_friends_list())
-            else:
-                rooms = self.channels.lget('channels-{}'.format(self.user_id))
-                for room in rooms:
-                    self.subscriber.subscribe('private-{}'.format(room), self)
-            self.send_status_message('active')
-        elif msg.get('type') == 'invite':
-            users = msg['users'] + [self.user_id]
-            room = self.channels.get_channel(self.user_id, msg.get('channel'))
-
-            # unsubscribe users
-            old_users = self.channels.lget('private-{}'.format(room))
-            for user in old_users - set(users):
-                self.channels.lrem('private-{}'.format(room), user)
-                if self.subscriber.subscribers.get('public-{}'.format(user)):
-                    self.subscriber.unsubscribe('private-{}'.format(room),
-                                                self.subscriber.subscribers.get('public-{}'.format(user)).keys()[0])
-
-            self.channels.ltrim('private-{}'.format(room))
-            self.channels.lpush('private-{}'.format(room), users)
-            self.channels.lpush('channels-{}'.format(self.user_id), [room])
-            for user in users:
-                self.channels.lpush('channels-{}'.format(user), [room])
-                if self.subscriber.subscribers.get('public-{}'.format(user)):
-                    self.subscriber.subscribe('private-{}'.format(room),
-                                              self.subscriber.subscribers.get('public-{}'.format(user)).keys()[0])
-
-            self.send_invite_message(room, users)
-        elif msg.get('type') == 'message':
-            message = msg['message']
-            room = msg['room']
-            client.publish('private-{}'.format(room), json.dumps({'type': 'message',
-                                                                  'users': list(self.channels.lget('private-{}'.format(room))),
-                                                                  'message': message, 'room': room}))
-            self.save_message(msg['message'], self.channels.lget('private-{}'.format(msg['room'])))
+        getattr(self, msg.get('type'), None)(msg)
 
     def on_close(self):
         self.subscriber.unsubscribe('public-{}'.format(self.user_id), self)
         self.send_status_message('inactive')
+
+    def subscribe(self, msg):
+        self.user_id = unicode(msg['user'])
+        self.subscriber.subscribe('public-{}'.format(self.user_id), self)
+        if not self.channels.has_public_channel(self.user_id):
+            # add user's friends to channel list
+            self.channels.lpush('public-{}'.format(self.user_id), self.get_friends_list())
+        else:
+            rooms = self.channels.lget('channels-{}'.format(self.user_id))
+            for room in rooms:
+                self.subscriber.subscribe('private-{}'.format(room), self)
+        self.send_status_message('active')
+
+    def invite(self, msg):
+        users = msg['users'] + [self.user_id]
+        room = self.channels.get_channel(self.user_id, msg.get('channel'))
+
+        # unsubscribe users
+        old_users = self.channels.lget('private-{}'.format(room))
+        for user in old_users - set(users):
+            self.channels.lrem('private-{}'.format(room), user)
+            if self.subscriber.subscribers.get('public-{}'.format(user)):
+                self.subscriber.unsubscribe('private-{}'.format(room),
+                                            self.subscriber.subscribers.get('public-{}'.format(user)).keys()[0])
+
+        self.channels.ltrim('private-{}'.format(room))
+        self.channels.lpush('private-{}'.format(room), users)
+        self.channels.lpush('channels-{}'.format(self.user_id), [room])
+        for user in users:
+            self.channels.lpush('channels-{}'.format(user), [room])
+            if self.subscriber.subscribers.get('public-{}'.format(user)):
+                self.subscriber.subscribe('private-{}'.format(room),
+                                          self.subscriber.subscribers.get('public-{}'.format(user)).keys()[0])
+
+        self.send_invite_message(room, users)
+
+    def message(self, msg):
+        message = msg['message']
+        room = msg['room']
+        client.publish('private-{}'.format(room), json.dumps({'type': 'message',
+                                                              'users': list(self.channels.lget('private-{}'.format(room))),
+                                                              'message': message, 'room': room}))
+        self.save_message(msg['message'], self.channels.lget('private-{}'.format(msg['room'])))
 
     def send_invite_message(self, room, users):
         self.send(json.dumps({'type': 'invite', 'room': room, 'users': users}))
@@ -120,6 +123,12 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         if broadcasters:
             self.broadcast(broadcasters, json.dumps({'type': status, 'users': [self.user_id]}))
             self.send(json.dumps({'type': status, 'users': active_users}))
+
+    def save_message(self, message, users):
+        raise NotImplementedError
+
+    def get_friends_list(self):
+        raise NotImplementedError
 
 
 # class Application(tornado.web.Application):
