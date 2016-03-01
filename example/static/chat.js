@@ -56,6 +56,15 @@ $(function () {
                     }
                 } else if (msg.type == 'invite') {
                     self.openForm(msg);
+                } else if (msg.type == 'unsubscribe') {
+                    var users = '';
+                    for(i=0;i<msg.users.length; i+=1) {
+                        users += $('.users').find('li[data-pk="' + msg.users[i] + '"] a').text() + ', ';
+                    }
+                    $('#' + msg.room).parent().find('.messages').prepend('<li>Users ' + users + ' has been unsubscribe.</li>');
+                    if (msg.users.indexOf(window.user) != -1) {
+                        $('#' + msg.room).remove();
+                    }
                 }
             };
 
@@ -94,7 +103,7 @@ $(function () {
         }).get();
         console.log(users);
         socket.send(JSON.stringify({type: 'invite', users: users,
-            'channel': $(this).parents('.chat').find('form').attr('id')}));
+            'room': $(this).parents('.chat').find('form').attr('id')}));
         return false;
     });
 

@@ -2,7 +2,6 @@ from __future__ import unicode_literals, print_function
 
 import json
 import uuid
-from collections import defaultdict, Counter
 
 import redis
 import sockjs.tornado
@@ -29,7 +28,7 @@ class Channel(object):
         self.redis_connection = redis.StrictRedis(host=client.connection.host, port=client.connection.port)
 
     def ltrim(self, key):
-        return self.redis_connection.ltrim(key, 0, -1)
+        return self.redis_connection.ltrim(key, -1, 0)
 
     def lrem(self, key, value):
         return self.redis_connection.lrem(key, 0, value)
@@ -45,11 +44,11 @@ class Channel(object):
         self.redis_connection.expire(key, self.time)
         return set(self.redis_connection.lrange(key, 0, -1))
 
-    def get_channel(self, user_id, channel=None):
+    def get_channel(self, user_id, users, channel=None):
         rooms = self.lget('channels-{}'.format(user_id))
+        users = set(users)
         if channel and channel in rooms:
             return channel
-        users = self.lget(user_id)
         for room in rooms:
             if self.lget(room) == users:
                 return room
@@ -67,16 +66,15 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
     subscriber = tornadoredis.pubsub.SockJSSubscriber(tornadoredis.Client())
     user_id = None
     channels = Channel()
-    subscribers = defaultdict(Counter)
 
     def on_message(self, message):
         msg = json.loads(message)
         getattr(self, msg.get('type'), None)(msg)
 
     def on_close(self):
-        self.subscribers[self.user_id][self] -= 1
-        if self.subscribers[self.user_id][self] <= 0:
-            del self.subscribers[self.user_id][self]
+        self.subscriber.subscribers[self.user_id][self] -= 1
+        if self.subscriber.subscribers[self.user_id][self] <= 0:
+            del self.subscriber.subscribers[self.user_id][self]
         self.send_status_message('inactive')
 
     def subscribe(self, msg):
@@ -90,7 +88,7 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         }
         """
         self.user_id = unicode(msg['user'])
-        self.subscribers[self.user_id][self] += 1
+        self.subscriber.subscribers[self.user_id][self] += 1
         if not self.channels.has_public_channel(self.user_id):
             # add user's friends to channel list
             self.channels.lpush(self.user_id, self.get_friends_list())
@@ -107,26 +105,36 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         Unsubscribe users who not in users msg["users"].
         :param msg: {
           "users": [<user_id>, <user_id>]
-          "type": "invite"
+          "type": "invite",
+          "room": <room>
         }
         """
         users = msg['users'] + [self.user_id]
-        room = self.channels.get_channel(self.user_id, msg.get('channel'))
+        room = self.channels.get_channel(self.user_id, users, msg.get('room'))
 
         # unsubscribe users
         _users = self.channels.lget(room)
-        for user in _users - set(users):
-            self.channels.lrem(room, user)
-            if self.subscribers.get(user):
-                self.subscriber.unsubscribe(room, self.subscribers.get(user).keys()[0])
+        unsub_users = _users - set(users)
+        if unsub_users:
+            broadcasters = []
+            unsub_msg = json.dumps({'type': 'unsubscribe', 'users': list(unsub_users), 'room': room})
+            client.publish(room, unsub_msg)
+            for user in unsub_users:
+                self.channels.lrem(room, user)
+                if self.subscriber.subscribers.get(user):
+                    sub = self.subscriber.subscribers.get(user).keys()[0]
+                    broadcasters.append(sub)
+                    self.subscriber.subscribers[room][sub] = 0
+                    self.subscriber.unsubscribe(room, sub)
+            self.broadcast(broadcasters, unsub_msg)
 
         self.channels.update(room, users)
         self.channels.lpush('channels-{}'.format(self.user_id), [room])
         # subscribe new users
-        for user in users:  # todo change to set(users) - _users
+        for user in set(users) - _users:
             self.channels.lpush('channels-{}'.format(user), [room])
-            if self.subscribers.get(user):
-                self.subscriber.subscribe(room, self.subscribers.get(user).keys()[0])
+            if self.subscriber.subscribers.get(user):
+                self.subscriber.subscribe(room, self.subscriber.subscribers.get(user).keys()[0])
 
         self.send_invite_message(room, users)
 
@@ -144,24 +152,31 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
            "message": <message>
         }
         """
-        message = msg['message']
+
         room = msg['room']
-        client.publish(room, json.dumps({'type': 'message',
-                                         'users': list(self.channels.lget(room)),
-                                         'message': message, 'room': room}))
-        self.save_message(msg['message'], self.channels.lget(msg['room']))
+        if room in self.channels.lget('channels-{}'.format(self.user_id)):
+            message = msg['message']
+            client.publish(room, json.dumps({'type': 'message',
+                                             'users': list(self.channels.lget(room)),
+                                             'message': message, 'room': room}))
+            self.save_message(msg['message'], self.channels.lget(msg['room']))
 
     def send_invite_message(self, room, users):
         self.send(json.dumps({'type': 'invite', 'room': room, 'users': users}))
 
     def send_status_message(self, status):
+        """
+        Broadcast message on status was changed
+        :param status: active / inactive
+        :return: {"type": <status>, "users": [<list of friends users>]}
+        """
         broadcasters = []
         active_users = []
 
         # get list active connections
         for user in self.channels.lget(self.user_id):
-            if self.subscribers.get(user):
-                broadcasters.extend(self.subscribers.get(user).keys())
+            if self.subscriber.subscribers.get(user):
+                broadcasters.extend(self.subscriber.subscribers.get(user).keys())
                 active_users.append(user)
         if broadcasters:
             self.broadcast(broadcasters, json.dumps({'type': status, 'users': [self.user_id]}))
@@ -174,7 +189,7 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         raise NotImplementedError
 
 
-# for debug
+# # for debug
 # import tornado.web
 # import tornado.ioloop
 #

@@ -52,7 +52,7 @@
 <script src="//cdn.jsdelivr.net/sockjs/1.0.3/sockjs.min.js"></script>
 
 <script>
-    window.user = {{ request.user.id }};
+    window.user = "{{ request.user.id }}";
 </script>
 <script src="{% static 'chat.js' %}"></script>
 </body>
