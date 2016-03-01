@@ -39,6 +39,7 @@ INSTALLED_APPS = (
     'django.contrib.staticfiles',
 
     'app',
+    'sockjs_chat',
 )
 
 MIDDLEWARE_CLASSES = (
@@ -113,5 +114,5 @@ STATICFILES_DIRS = (
 SOCKJS_PORT = 8080
 SOCKJS_CHANNEL = 'websocket'
 SOCKJS_CLASSES = (
-    'app.main.SockJSHandler',
+    'app.sockets.SockJSHandler',
 )

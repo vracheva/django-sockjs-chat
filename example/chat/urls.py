@@ -20,7 +20,6 @@ from app.views import IndexView
 
 urlpatterns = [
     url(r'^$', IndexView.as_view()),
-    # url(r'^chat/(?P<pk>\d+)/$', MessageView.as_view(), name='chat'),
     url(r'^admin/', include(admin.site.urls)),
     url(r'^accounts/', include('django.contrib.auth.urls')),
 

@@ -4,6 +4,7 @@ from django import forms
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.views.generic import CreateView
+
 from app.models import Message
 
 
@@ -22,4 +23,3 @@ class IndexView(LoginRequiredMixin, CreateView):
         context['users'] = User.objects.all().exclude(pk=self.request.user.pk)
         context['form'] = MessageForm()
         return context
-
