@@ -93,7 +93,8 @@ $(function () {
             return $(domElement).val();
         }).get();
         console.log(users);
-        socket.send(JSON.stringify({type: 'invite', users: users}));
+        socket.send(JSON.stringify({type: 'invite', users: users,
+            'channel': $(this).parents('.chat').find('form').attr('id')}));
         return false;
     });
 
