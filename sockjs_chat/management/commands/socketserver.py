@@ -7,9 +7,9 @@ from sockjs.tornado import SockJSRouter
 
 
 class Command(BaseCommand):
-    '''
+    """
     From https://github.com/peterbe/django-sockjs-tornado.git
-    '''
+    """
 
     option_list = BaseCommand.option_list + (
         make_option(
