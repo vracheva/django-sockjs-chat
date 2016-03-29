@@ -49,11 +49,13 @@
     {% endblock content %}
 
 <script src="https://code.jquery.com/jquery-2.2.1.js"></script>
-<script src="//cdn.jsdelivr.net/sockjs/1.0.3/sockjs.min.js"></script>
-
-<script>
-    window.user = "{{ request.user.id }}";
-</script>
-<script src="{% static 'chat.js' %}"></script>
+{% block scripts %}
+{#    <script src="//cdn.jsdelivr.net/sockjs/1.0.3/sockjs.min.js"></script>#}
+    <script>
+{#        window.user = "{{ request.user.id }}";#}
+        window.url = 'ws://localhost:8080/websocket/' + {{ request.user.id }};
+    </script>
+    <script src="{% static 'chat.js' %}"></script>
+{% endblock scripts %}
 </body>
 </html>

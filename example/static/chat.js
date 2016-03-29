@@ -22,13 +22,13 @@ $(function () {
 
         init: function () {
             var self = this;
-            //this.ws = new WebSocket('ws://localhost:8080/websocket');
-            this.ws = new SockJS("//localhost:8080/websocket");
+            this.ws = new WebSocket(window.url);
+            //this.ws = new SockJS("//localhost:8080/websocket");
 
             this.ws.onopen = function () {
                 console.log('Socket opened');
 
-                self.ws.send(JSON.stringify({type: 'subscribe', user: window.user}));
+                //self.ws.send(JSON.stringify({type: 'subscribe', user: window.user}));
             };
 
             this.ws.onclose = function () {
