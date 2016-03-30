@@ -1,51 +1,24 @@
 from __future__ import unicode_literals, print_function
 
-import json
-from collections import defaultdict, Counter
-
 import tornado.websocket
-
 import tornado.web
 import tornado.ioloop
 import tornadoredis
 import tornado.gen
+from tornadoredis.pubsub import BaseSubscriber
 
-from sockjs_chat.main import Channel
-from sockjs_chat.mixins import SocketMixin
+from sockjs_chat.main import SocketMixin
+
+
+class WebSocketSubscriber(tornadoredis.pubsub.BaseSubscriber):
+    pass
 
 
 class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
-    channels = Channel()
-    user_id = None
+    client = WebSocketSubscriber(tornadoredis.Client())
 
     def check_origin(self, origin):
         return True
-
-    def on_message(self, msg):
-        print(msg)
-        if isinstance(msg, unicode):
-            return
-        if msg.kind == 'disconnect':
-            # Do not try to reconnect, just send a message back
-            # to the client and close the client connection
-            self.write_message('The connection terminated '
-                               'due to a Redis server error.')
-            self.close()
-        elif msg.kind == 'subscribe':
-            pass
-        else:
-            action = getattr(self, msg.kind, None)
-            action and action(msg)
-
-    @tornado.gen.engine
-    def open(self, *args, **kwargs):
-        self.user_id = kwargs['user']
-        self.client = tornadoredis.Client()
-        self.client.connect()
-        yield tornado.gen.Task(self.client.subscribe, self.user_id)
-        self.client.listen(self.on_message)
-        self.client.subscribers = defaultdict(Counter)
-        self.subscribe(kwargs)
 
     @tornado.gen.coroutine
     def broadcast(self, clients, message):
@@ -56,8 +29,16 @@ class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
             if count % 100 == 0:
                 yield tornado.gen.moment
 
+    # @tornado.gen.engine
+    def open(self, *args, **kwargs):
+        super(WebSockHandler, self).open(*args, **kwargs)
+        # yield tornado.gen.Task(self.client.redis.subscribe, 'test_channel')
+        # self.client.redis.listen(self.on_message)
+        self.subscribe(kwargs)
+
     def send(self, msg):
-        self.write_message(msg)
+        if self.ws_connection:
+            self.write_message(msg)
 
     def save_message(self, message, users):
         pass
@@ -65,13 +46,20 @@ class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
     def get_friends_list(self):
         return range(1, 6)
 
+    def on_connection_close(self):
+        self.client.subscribers[self.user_id][self] -= 1
+        if self.client.subscribers[self.user_id][self] <= 0:
+            del self.client.subscribers[self.user_id][self]
+        self.send_status_message('inactive')
+        super(WebSockHandler, self).on_connection_close()
+
 
 class Application(tornado.web.Application):
 
     def __init__(self):
         handlers = [
             (r'/static/(.*)', tornado.web.StaticFileHandler, {'path': 'static/'}),
-            (r'/websocket/(?P<user>\d+)', WebSockHandler),
+            (r'/websocket/(?P<user>\d+)', WebSockHandler, {}, 'websocket'),
         ]
 
         tornado.web.Application.__init__(self, handlers)
