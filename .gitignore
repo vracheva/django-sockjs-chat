@@ -60,9 +60,4 @@ node_modules/
 .env
 /src/
 
-# User-uploaded media
-snappt/media/
-
-# Frontend
-snappt/bower_components/
-snappt/node_modules/
+db.sqlite3
