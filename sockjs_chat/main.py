@@ -90,11 +90,7 @@ class SocketMixin(object):
             # get all user's channel and subscribe to them
             rooms = self.channels.lget('channels-{}'.format(self.user_id))
             for room in rooms:
-
-                self.client.redis.subscribe(room)
-
-                # self.client.subscribe(room, self)
-
+                self.client.subscribe(room, self)
         self.send_status_message('active')
 
     def invite(self, msg):
@@ -133,11 +129,7 @@ class SocketMixin(object):
         for user in set(users) - _users:
             self.channels.lpush('channels-{}'.format(user), [room])
             if self.client.subscribers.get(user):
-
-                self.client.subscribers.get(user).keys()[0].client.redis.subscribe(room)
-
-                # self.client.subscribe(room, self.client.subscribers.get(user).keys()[0])
-
+                self.client.subscribe(room, self.client.subscribers.get(user).keys()[0])
         self.send_invite_message(room, users)
 
     def message(self, msg):

@@ -1,17 +1,38 @@
 from __future__ import unicode_literals, print_function
 
+import json
+
 import tornado.websocket
 import tornado.web
 import tornado.ioloop
 import tornadoredis
 import tornado.gen
+
 from tornadoredis.pubsub import BaseSubscriber
 
 from sockjs_chat.main import SocketMixin
 
 
 class WebSocketSubscriber(tornadoredis.pubsub.BaseSubscriber):
-    pass
+    def on_message(self, msg):
+        """Handle new message on the Redis channel."""
+        if msg and msg.kind == 'message':
+            try:
+                message = json.loads(msg.body)
+                sender = message['sender']
+                message = message['message']
+            except (ValueError, KeyError):
+                message = msg.body
+                sender = None
+            subscribers = list(self.subscribers[msg.channel].keys())
+            for subscriber in subscribers:
+                if sender is None or sender != subscriber.uid:
+                    try:
+                        subscriber.write_message(message)
+                    except tornado.websocket.WebSocketClosedError:
+                        # Remove dead peer
+                        self.unsubscribe(msg.channel, subscriber)
+        super(WebSocketSubscriber, self).on_message(msg)
 
 
 class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
