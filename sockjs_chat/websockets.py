@@ -1,12 +1,14 @@
 from __future__ import unicode_literals, print_function
 
 import json
+import urlparse
 
 import tornado.websocket
 import tornado.web
 import tornado.ioloop
 import tornadoredis
 import tornado.gen
+from tornado.options import options
 
 from tornadoredis.pubsub import BaseSubscriber
 
@@ -39,7 +41,10 @@ class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
     client = WebSocketSubscriber(tornadoredis.Client())
 
     def check_origin(self, origin):
-        return True
+        allowed = super(WebSockHandler, self).check_origin(origin)
+        parsed = urlparse.urlparse(origin.lower())
+        matched = any(parsed.netloc == host for host in options.allowed_hosts)
+        return options.debug or allowed or matched
 
     @tornado.gen.coroutine
     def broadcast(self, clients, message):
@@ -50,11 +55,8 @@ class WebSockHandler(SocketMixin, tornado.websocket.WebSocketHandler):
             if count % 100 == 0:
                 yield tornado.gen.moment
 
-    # @tornado.gen.engine
     def open(self, *args, **kwargs):
         super(WebSockHandler, self).open(*args, **kwargs)
-        # yield tornado.gen.Task(self.client.redis.subscribe, 'test_channel')
-        # self.client.redis.listen(self.on_message)
         self.subscribe(kwargs)
 
     def send(self, msg):
