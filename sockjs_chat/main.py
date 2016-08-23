@@ -10,7 +10,6 @@ import tornadoredis.client
 import tornadoredis.pubsub
 
 
-# Create synchronous redis client to publish messages to a channel
 client = tornadoredis.Client()
 client.connect()
 
@@ -61,21 +60,16 @@ class Channel(object):
         self.ltrim(key)
         self.lpush(key, value)
 
+import tornado.gen
 
-class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
-    subscriber = tornadoredis.pubsub.SockJSSubscriber(tornadoredis.Client())
-    user_id = None
+
+class SocketMixin(object):
     channels = Channel()
+    user_id = None
 
     def on_message(self, message):
         msg = json.loads(message)
         getattr(self, msg.get('type'), None)(msg)
-
-    def on_close(self):
-        self.subscriber.subscribers[self.user_id][self] -= 1
-        if self.subscriber.subscribers[self.user_id][self] <= 0:
-            del self.subscriber.subscribers[self.user_id][self]
-        self.send_status_message('inactive')
 
     def subscribe(self, msg):
         """
@@ -88,7 +82,7 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         }
         """
         self.user_id = unicode(msg['user'])
-        self.subscriber.subscribers[self.user_id][self] += 1
+        self.client.subscribers[self.user_id][self] += 1
         if not self.channels.has_public_channel(self.user_id):
             # add user's friends to channel list
             self.channels.lpush(self.user_id, self.get_friends_list())
@@ -96,7 +90,7 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
             # get all user's channel and subscribe to them
             rooms = self.channels.lget('channels-{}'.format(self.user_id))
             for room in rooms:
-                self.subscriber.subscribe(room, self)
+                self.client.subscribe(room, self)
         self.send_status_message('active')
 
     def invite(self, msg):
@@ -119,13 +113,14 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
             broadcasters = []
             unsub_msg = json.dumps({'type': 'unsubscribe', 'users': list(unsub_users), 'room': room})
             client.publish(room, unsub_msg)
+
             for user in unsub_users:
                 self.channels.lrem(room, user)
-                if self.subscriber.subscribers.get(user):
-                    sub = self.subscriber.subscribers.get(user).keys()[0]
+                if self.client.subscribers.get(user):
+                    sub = self.client.subscribers.get(user).keys()[0]
                     broadcasters.append(sub)
-                    self.subscriber.subscribers[room][sub] = 0
-                    self.subscriber.unsubscribe(room, sub)
+                    self.client.subscribers[room][sub] = 0
+                    self.client.unsubscribe(room, sub)
             self.broadcast(broadcasters, unsub_msg)
 
         self.channels.update(room, users)
@@ -133,9 +128,8 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
         # subscribe new users
         for user in set(users) - _users:
             self.channels.lpush('channels-{}'.format(user), [room])
-            if self.subscriber.subscribers.get(user):
-                self.subscriber.subscribe(room, self.subscriber.subscribers.get(user).keys()[0])
-
+            if self.client.subscribers.get(user):
+                self.client.subscribe(room, self.client.subscribers.get(user).keys()[0])
         self.send_invite_message(room, users)
 
     def message(self, msg):
@@ -175,12 +169,32 @@ class BaseSockJSHandler(sockjs.tornado.SockJSConnection):
 
         # get list active connections
         for user in self.channels.lget(self.user_id):
-            if self.subscriber.subscribers.get(user):
-                broadcasters.extend(self.subscriber.subscribers.get(user).keys())
+            if self.client.subscribers.get(user):
+                broadcasters.extend(self.client.subscribers.get(user).keys())
                 active_users.append(user)
         if broadcasters:
             self.broadcast(broadcasters, json.dumps({'type': status, 'users': [self.user_id]}))
             self.send(json.dumps({'type': status, 'users': active_users}))
+
+    def save_message(self, message, users):
+        raise NotImplementedError
+
+    def get_friends_list(self):
+        raise NotImplementedError
+
+
+class BaseSockJSHandler(SocketMixin, sockjs.tornado.SockJSConnection):
+    client = tornadoredis.pubsub.SockJSSubscriber(tornadoredis.Client())
+
+    def on_open(self, *args, **kwargs):
+        super(BaseSockJSHandler, self).on_open(*args, **kwargs)
+        self.subscribe(kwargs)
+
+    def on_close(self):
+        self.client.subscribers[self.user_id][self] -= 1
+        if self.client.subscribers[self.user_id][self] <= 0:
+            del self.client.subscribers[self.user_id][self]
+        self.send_status_message('inactive')
 
     def save_message(self, message, users):
         raise NotImplementedError
