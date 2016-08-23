@@ -1,0 +1,61 @@
+{% load staticfiles %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        .users li.active a {
+            color: #33bd33;
+        }
+
+        .chat {
+            background-color: #fafafa;
+            padding: 10px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Chat for user {{ request.user }}</h1>
+    {% block content %}
+        <ul class="users">
+            {% for user in users %}
+                <li data-pk="{{ user.pk }}"><a href="#">{{ user }}</a></li>
+            {% endfor %}
+        </ul>
+
+        <div class="chats"></div>
+
+        <div hidden="hidden" class="chat">
+            <h3>Chat with <span></span></h3>
+            <ul class="messages"></ul>
+
+            <div>
+                {% for user in users %}
+                    <input type="checkbox" value="{{ user.pk }}" name="friends">{{ user }}
+                {% endfor %}
+                <a href="#" class="add-friends">Add/Remove friends</a>
+            </div>
+
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit">Send</button>
+            </form>
+        </div>
+
+    {% endblock content %}
+
+<script src="https://code.jquery.com/jquery-2.2.1.js"></script>
+{% block scripts %}
+{#    <script src="//cdn.jsdelivr.net/sockjs/1.0.3/sockjs.min.js"></script>#}
+    <script>
+{#        window.user = "{{ request.user.id }}";#}
+        window.url = 'ws://127.0.0.1:8000/chat/' + {{ request.user.id }};
+    </script>
+    <script src="{% static 'chat.js' %}"></script>
+{% endblock scripts %}
+</body>
+</html>
